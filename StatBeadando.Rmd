@@ -29,12 +29,15 @@ ggplot(usa_illnesses, aes(x=Year, y=Depressive_disorders)) + geom_line(color="re
 
 Országonként nagy eltérések lehetnek az adatokban
 ```{r}
-ggplot(illnesses[illnesses["Code"] == "CHN",], aes(x=Year, y=Depressive_disorders)) + geom_line(color="red4") + theme_minimal() + labs(title= "% of depressed population in China over time") + theme(plot.title = element_text(hjust=0.5, size=20, face="bold"))
+china_illnesses <- illnesses[illnesses["Code"] == "CHN",]
+china_disorders <- china_illnesses[,4:ncol(china_illnesses)]
+
+ggplot(china_illnesses, aes(x=Year, y=Depressive_disorders)) + geom_line(color="red4") + theme_minimal() + labs(title= "% of depressed population in China over time") + theme(plot.title = element_text(hjust=0.5, size=20, face="bold"))
 ```
 
 
 ```{r}
-usa_disorders <- illnesses[c("Schizophrenia", "Depressive_disorders", "Anxiety_disorders", "Bipolar_disorders", "Eating_disorders")]
+usa_disorders <- usa_illnesses[c("Schizophrenia", "Depressive_disorders", "Anxiety_disorders", "Bipolar_disorders", "Eating_disorders")]
 head(usa_disorders)
 
 ```
@@ -44,8 +47,8 @@ cor(usa_disorders)
 ```
 A korreálciós mátrix alapján közepesen erős negatív korreálció van a skizofrénia és a depresszió között, míg a bipoláris zavar pozitív korrelációban áll a szorongással és az étkezési zavarokkal.
 
+## Főkomponens analízis
 ```{r}
-
 pcaUSA <- princomp(usa_disorders, cor = T)
 summary(pcaUSA, loadings = T)
 ```
@@ -54,6 +57,8 @@ screeplot(pcaUSA, col = 'blue', pch = 16, type = 'lines', cex = 2, lwd = 2, main
 ```
 
 A módosított Kaiser szabály szerint csak a >=0.7 varianciájú komponenseket tartjuk meg, ebben az esetben az első kettőt. 
+
+## Faktoranalízis
 
 ```{r}
 eigen_values <- eigen(cor(usa_disorders))$values
@@ -82,6 +87,29 @@ print(fit)
 Az eredmény nem túl meggyőző, a chi négyzet statisztika túl magas, és faktorszámban sem mehetünk feljebb. Emellett p értéke 0-közeli, így elutasítjuk a nullhipotézist, ami az lett volna, hogy a faktorok tökéletesen magyarázzák a paramétereket. Ezt az is megerősíti, hogy a két faktor kumulatív varianciája 0.66, tehát a kommunalitás csupán a variancia 2/3 részét magyarázza.
 
 ```{r}
+usa_disorders$Code <- usa_illnesses$Code
+china_disorders$Code <- china_illnesses$Code 
 
+#Check normality
+normality <- array(NA, dim = c(5))
+normality[1] <- shapiro.test(usa_disorders$Schizophrenia)$p.value > 0.5
+normality[2] <- shapiro.test(usa_disorders$Depressive_disorders)$p.value > 0.5
+normality[3] <- shapiro.test(usa_disorders$Anxiety_disorders)$p.value > 0.5
+normality[4] <- shapiro.test(usa_disorders$Bipolar_disorders)$p.value > 0.5
+normality[5] <- shapiro.test(usa_disorders$Eating_disorders)$p.value > 0.5
 
+normality
+```
+Az összes tulajdonság elbukott a shapiro-wilkins teszten, nem normális eloszlású az adat, így LDA, QDA kizárva. Logisztikus regressziót szintén nem használhatunk, mert nem elég nagy az adathalmaz, csupán 30-30 bejegyzés. Marad a klaszterezés, bár ilyen kevés adat mellett az sem tud csodát tenni.
+
+```{r}
+library(caret)
+knn_illnesses <- rbind(usa_disorders, china_disorders)
+knn_illnesses$Code <- factor(knn_illnesses$Code)
+
+train_index <- createDataPartition(knn_illnesses$Code, p = 0.7, list = FALSE)
+train_data <- knn_illnesses[train_index,]
+test_data <- knn_illnesses[-train_index,]
+
+head(knn_illnesses)
 ```
