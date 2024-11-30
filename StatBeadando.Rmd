@@ -100,16 +100,77 @@ normality[5] <- shapiro.test(usa_disorders$Eating_disorders)$p.value > 0.5
 
 normality
 ```
-Az összes tulajdonság elbukott a shapiro-wilkins teszten, nem normális eloszlású az adat, így LDA, QDA kizárva. Logisztikus regressziót szintén nem használhatunk, mert nem elég nagy az adathalmaz, csupán 30-30 bejegyzés. Marad a klaszterezés, bár ilyen kevés adat mellett az sem tud csodát tenni.
+Az összes tulajdonság elbukott a shapiro-wilkins teszten, nem normális eloszlású az adat, így LDA, QDA kizárva. Logisztikus regressziót szintén nem használhatunk, mert nem elég nagy az adathalmaz, csupán 30-30 bejegyzés. Marad a klaszterezés.
+
+## K-szomszéd klaszterezés
 
 ```{r}
 library(caret)
+library(class)
+set.seed(123)
+
 knn_illnesses <- rbind(usa_disorders, china_disorders)
 knn_illnesses$Code <- factor(knn_illnesses$Code)
+#Nem kéne hogy számítson, de a biztonság kedvéért megkeverem a sorokat
+knn_illnesses <- knn_illnesses[sample(1:nrow(knn_illnesses)),]
 
+#Klasszikus train/test split
 train_index <- createDataPartition(knn_illnesses$Code, p = 0.7, list = FALSE)
 train_data <- knn_illnesses[train_index,]
 test_data <- knn_illnesses[-train_index,]
 
-head(knn_illnesses)
+train_features <- train_data[, -ncol(train_data)]
+train_labels <- train_data$Code
+test_features <- test_data[, -ncol(test_data)]
+test_labels <- test_data$Code
+
+#Jellemzők standardizálása
+train_features <- scale(train_features)
+test_features <- scale(test_features)
+
+k <- 2
+knn_predictions <- knn(train = train_features, test = test_features, cl = train_labels, k = k)
+
+# Pontosság kiszámítása
+accuracy <- mean(knn_predictions == test_labels)
+print(paste("Pontosság:", round(accuracy * 100, 2), "%"))
+
 ```
+
+```{r}
+#Konfúziós mátrix
+
+confusionMatrix(knn_predictions, as.factor(test_labels))
+
+```
+Az amerikai és kínai adatokat látszólag tökéletesen sikerült elkülöníteni. Azonban ez várható volt, mert a két ország között hatalmas különbségek vannak.
+
+Nézzük meg, hogy mi történik, ha szomszédos országokat próbálunk ugyanúgy klaszterezni! Ezúttal európai országokat veszünk alapul, és a változatosság kedvéért k-közép klaszterezést használunk k-szomszéd helyett. Így viszont a tanítás is felügyeletlen lesz.
+
+## K-közép klaszterezés
+
+```{r}
+library(cluster)
+#Új mintavétel
+france_illnesses <- illnesses[illnesses["Code"] == "FRA",]
+germany_illnesses <- illnesses[illnesses["Code"] == "DEU",]
+britain_illnesses <- illnesses[illnesses["Code"] == "GBR",]
+
+kmeans_illnesses <- rbind(france_illnesses, germany_illnesses,britain_illnesses)
+kmeans_illnesses <- kmeans_illnesses[c(2,4:8)]
+#Itt sem kéne számítania tbh, de jól esik a lelki világomnak lol
+kmeans_illnesses <- kmeans_illnesses[sample(1:nrow(kmeans_illnesses)),]
+kmeans_illnesses$Code <- factor(kmeans_illnesses$Code)
+
+#Kihagyjuk a Code oszlopot
+kmeans_result <- kmeans(kmeans_illnesses[,-1], centers=3, nstart=25)
+
+kmeans_result
+```
+
+```{r}
+confusion_matrix <- table(True_Label = kmeans_illnesses$Code, Cluster = kmeans_result$cluster)
+print(confusion_matrix)
+```
+
+Úgy tűnik a szomszédság ellenére egyértelműen elválaszthatóak az értékek. (Ebből kiindulva valószínűleg nem valósak az adatok). Itt nem csináltam tanuló/tesztelő halmaz felbontást, mert felügyeletlen tanulásnál az a feltételezés hogy nincs mihez hasonlítani a jóságot, így a `kmeans` függvénynek sincs `test` paramétere.
